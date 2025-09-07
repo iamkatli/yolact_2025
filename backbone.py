@@ -315,8 +315,7 @@ class DarkNetBackbone(nn.Module):
     def init_backbone(self, path):
         """ Initializes the backbone weights for training. """
         # Note: Using strict=False is berry scary. Triple check this.
-        device = next(self.parameters()).device
-        self.load_state_dict(torch.load(path, map_location=device, weights_only=False), strict=False)
+        self.load_state_dict(torch.load(path), strict=False)
 
 
 
