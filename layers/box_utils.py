@@ -50,13 +50,9 @@ def intersect(box_a, box_b):
                        box_b[:, :, :2].unsqueeze(1).expand(n, A, B, 2))
     return torch.clamp(max_xy - min_xy, min=0).prod(3)  # inter
 
-
-def jaccard(box_a, box_b, iscrowd:bool=False):
-    """Compute the jaccard overlap of two sets of boxes.  The jaccard overlap
-    is simply the intersection over union of two boxes.  Here we operate on
-    ground truth boxes and default boxes. If iscrowd=True, put the crowd in box_b.
-    E.g.:
-        A ∩ B / A ∪ B = A ∩ B / (area(A) + area(B) - A ∩ B)
+def jaccard(box_a, box_b, iscrowd: bool = False):
+    """Compute the jaccard overlap of two sets of boxes (IoU).
+    If iscrowd=True, IoU is computed differently for crowd boxes.
     Args:
         box_a: (tensor) Ground truth bounding boxes, Shape: [num_objects,4]
         box_b: (tensor) Prior boxes from priorbox layers, Shape: [num_priors,4]
@@ -69,15 +65,46 @@ def jaccard(box_a, box_b, iscrowd:bool=False):
         box_a = box_a[None, ...]
         box_b = box_b[None, ...]
 
+    # 🔑 Ensure both on same device
+    box_b = box_b.to(box_a.device)
+
     inter = intersect(box_a, box_b)
-    area_a = ((box_a[:, :, 2]-box_a[:, :, 0]) *
-              (box_a[:, :, 3]-box_a[:, :, 1])).unsqueeze(2).expand_as(inter)  # [A,B]
-    area_b = ((box_b[:, :, 2]-box_b[:, :, 0]) *
-              (box_b[:, :, 3]-box_b[:, :, 1])).unsqueeze(1).expand_as(inter)  # [A,B]
+    area_a = ((box_a[:, :, 2] - box_a[:, :, 0]) *
+              (box_a[:, :, 3] - box_a[:, :, 1])).unsqueeze(2).expand_as(inter)  # [A,B]
+    area_b = ((box_b[:, :, 2] - box_b[:, :, 0]) *
+              (box_b[:, :, 3] - box_b[:, :, 1])).unsqueeze(1).expand_as(inter)  # [A,B]
     union = area_a + area_b - inter
 
     out = inter / area_a if iscrowd else inter / union
     return out if use_batch else out.squeeze(0)
+
+# def jaccard(box_a, box_b, iscrowd:bool=False):
+#     """Compute the jaccard overlap of two sets of boxes.  The jaccard overlap
+#     is simply the intersection over union of two boxes.  Here we operate on
+#     ground truth boxes and default boxes. If iscrowd=True, put the crowd in box_b.
+#     E.g.:
+#         A ∩ B / A ∪ B = A ∩ B / (area(A) + area(B) - A ∩ B)
+#     Args:
+#         box_a: (tensor) Ground truth bounding boxes, Shape: [num_objects,4]
+#         box_b: (tensor) Prior boxes from priorbox layers, Shape: [num_priors,4]
+#     Return:
+#         jaccard overlap: (tensor) Shape: [box_a.size(0), box_b.size(0)]
+#     """
+#     use_batch = True
+#     if box_a.dim() == 2:
+#         use_batch = False
+#         box_a = box_a[None, ...]
+#         box_b = box_b[None, ...]
+
+#     inter = intersect(box_a, box_b)
+#     area_a = ((box_a[:, :, 2]-box_a[:, :, 0]) *
+#               (box_a[:, :, 3]-box_a[:, :, 1])).unsqueeze(2).expand_as(inter)  # [A,B]
+#     area_b = ((box_b[:, :, 2]-box_b[:, :, 0]) *
+#               (box_b[:, :, 3]-box_b[:, :, 1])).unsqueeze(1).expand_as(inter)  # [A,B]
+#     union = area_a + area_b - inter
+
+#     out = inter / area_a if iscrowd else inter / union
+#     return out if use_batch else out.squeeze(0)
 
 def elemwise_box_iou(box_a, box_b):
     """ Does the same as above but instead of pairwise, elementwise along the inner dimension. """
@@ -95,22 +122,48 @@ def elemwise_box_iou(box_a, box_b):
     # Return value is [n] for inputs [n, 4]
     return torch.clamp(inter / union, max=1)
 
+# def mask_iou(masks_a, masks_b, iscrowd=False):
+#     """
+#     Computes the pariwise mask IoU between two sets of masks of size [a, h, w] and [b, h, w].
+#     The output is of size [a, b].
+
+#     Wait I thought this was "box_utils", why am I putting this in here?
+#     """
+
+#     masks_a = masks_a.view(masks_a.size(0), -1)
+#     masks_b = masks_b.view(masks_b.size(0), -1)
+
+#     intersection = masks_a @ masks_b.t()
+#     area_a = masks_a.sum(dim=1).unsqueeze(1)
+#     area_b = masks_b.sum(dim=1).unsqueeze(0)
+
+#     return intersection / (area_a + area_b - intersection) if not iscrowd else intersection / area_a
+
 def mask_iou(masks_a, masks_b, iscrowd=False):
     """
-    Computes the pariwise mask IoU between two sets of masks of size [a, h, w] and [b, h, w].
+    Computes the pairwise mask IoU between two sets of masks of size [a, h, w] and [b, h, w].
     The output is of size [a, b].
-
-    Wait I thought this was "box_utils", why am I putting this in here?
     """
+    # Ensure both tensors are on the same device
+    masks_b = masks_b.to(masks_a.device)
 
-    masks_a = masks_a.view(masks_a.size(0), -1)
-    masks_b = masks_b.view(masks_b.size(0), -1)
+    # Flatten masks to [N, HW]
+    masks_a = masks_a.view(masks_a.size(0), -1).float()
+    masks_b = masks_b.view(masks_b.size(0), -1).float()
 
+    # Compute intersection
     intersection = masks_a @ masks_b.t()
+
+    # Areas
     area_a = masks_a.sum(dim=1).unsqueeze(1)
     area_b = masks_b.sum(dim=1).unsqueeze(0)
 
-    return intersection / (area_a + area_b - intersection) if not iscrowd else intersection / area_a
+    # Compute IoU
+    if not iscrowd:
+        return intersection / (area_a + area_b - intersection)
+    else:
+        return intersection / area_a
+
 
 def elemwise_mask_iou(masks_a, masks_b):
     """ Does the same as above but instead of pairwise, elementwise along the outer dimension. """

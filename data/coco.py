@@ -154,9 +154,18 @@ class COCODetection(data.Dataset):
 
         if self.transform is not None:
             if len(target) > 0:
-                target = np.array(target)
-                img, masks, boxes, labels = self.transform(img, masks, target[:, :4],
-                    {'num_crowds': num_crowds, 'labels': target[:, 4]})
+                target = np.array(target, dtype=np.float32)
+                try:
+                    img, masks, boxes, labels = self.transform(
+                        img, masks, target[:, :4],
+                        {'num_crowds': num_crowds, 'labels': target[:, 4]}
+                    )
+                except Exception as e:
+                    print("Skipping bad sample:", e)
+                    return self.pull_item(random.randint(0, len(self.ids)-1))
+                # target = np.array(target)
+                # img, masks, boxes, labels = self.transform(img, masks, target[:, :4],
+                #     {'num_crowds': num_crowds, 'labels': target[:, 4]})
             
                 # I stored num_crowds in labels so I didn't have to modify the entirety of augmentations
                 num_crowds = labels['num_crowds']
