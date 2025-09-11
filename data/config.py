@@ -859,7 +859,7 @@ yolact_custom_config = yolact_resnet50_config.copy({
 
     # Training settings
     'num_classes': 6 + 1,  # 6 classes + background
-    'max_iter': 1000,
+    'max_iter': 200,
     'lr_schedule': lambda x: 1,  # fixed learning rate (no decay)
     'lr': 1e-4,
     'momentum': 0.9,
