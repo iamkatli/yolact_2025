@@ -173,7 +173,49 @@ pascal_sbd_dataset = dataset_base.copy({
 })
 
 
+# Define your custom dataset configuration
+# give a unique name, like `my_dataset`.
+my_dataset = dataset_base.copy({
+    'name': 'My Custom Dataset',
 
+    # Point to your specific folder structure.
+    # Assumes your data is in `yolact/data/my_dataset/`
+    # and inside that folder are 'train', 'valid' directories.
+    'train_images': './data/my_dataset/train',
+    'train_info':   './data/my_dataset/train/_annotations.coco.json',
+
+    'valid_images': './data/my_dataset/valid',
+    'valid_info':   './data/my_dataset/valid/_annotations.coco.json',
+
+    # Define your class names list directly inside the config.
+    'class_names': ('bench', 'chair', 'couch', 'dining table', 'laptop', 'person'),
+
+    # If your category IDs in the JSON are already 1, 2, 3, ..., 6, you don't need a label_map.
+    # If they are something else (e.g., 15, 21, 30), you MUST define a map here.
+    # Example: 'label_map': {15: 1, 21: 2, 30: 3, ...}
+    'label_map': None
+})
+
+my_dataset_test = dataset_base.copy({
+    'name': 'My Custom Test Dataset',
+
+    # Point to your specific folder structure.
+    # Assumes your data is in `yolact/data/my_dataset/`
+    # and inside that folder are 'train', 'valid' directories.
+    'train_images': './data/my_dataset/test',
+    'train_info':   './data/my_dataset/test/_annotations.coco.json',
+
+    'valid_images': './data/my_dataset/test',
+    'valid_info':   './data/my_dataset/test/_annotations.coco.json',
+
+    # Define your class names list directly inside the config.
+    'class_names': ('bench', 'chair', 'couch', 'dining table', 'laptop', 'person'),
+
+    # If your category IDs in the JSON are already 1, 2, 3, ..., 6, you don't need a label_map.
+    # If they are something else (e.g., 15, 21, 30), you MUST define a map here.
+    # Example: 'label_map': {15: 1, 21: 2, 30: 3, ...}
+    'label_map': None
+})
 
 
 # ----------------------- TRANSFORMS ----------------------- #
@@ -803,6 +845,54 @@ yolact_plus_resnet50_config = yolact_plus_base_config.copy({
         'preapply_sqrt': False,
         'use_square_anchors': False,
     }),
+})
+
+# ----------------------- YOUR NEW TRAINING CONFIG GOES HERE ----------------------- #
+
+# Step 2: Create a training config that USES your new dataset.
+# We copy a good default (like yolact_resnet50_config) and change what's necessary.
+yolact_custom_config = yolact_base_config.copy({
+    'name': 'yolact_custom',
+
+    # Dataset
+    'dataset': my_dataset,  # assumes you define this earlier
+
+    # Training settings
+    'num_classes': 6 + 1,  # 6 classes + background
+    'max_iter': 10000,
+    'lr_schedule': lambda x: 1,  # fixed learning rate (no decay)
+    'lr': 1e-4,
+    'momentum': 0.9,
+    'decay': 5e-4,
+
+    # Data loader
+    'batch_size': 4,
+    'num_workers': 2,
+
+    # Image size and augmentations
+    'use_focal_loss': True,
+    'use_class_balanced_conf': True,
+    'use_pixel_scales': True,
+
+    # NMS and postprocessing
+    'nms_top_k': 200,
+    'max_num_detections': 100,
+    'use_fast_nms': True,
+    'score_threshold': 0.3,
+})
+
+yolact_custom_test_config = yolact_custom_config.copy({
+    'name': 'yolact_custom_test',
+
+    'dataset': my_dataset_test,  # your test dataset
+
+    # Reduce post-processing thresholds for better recall
+    'score_threshold': 0.2,
+    'nms_top_k': 100,
+    'max_num_detections': 50,
+
+    # Keep NMS fast
+    'use_fast_nms': True,
 })
 
 
