@@ -851,7 +851,7 @@ yolact_plus_resnet50_config = yolact_plus_base_config.copy({
 
 # Step 2: Create a training config that USES your new dataset.
 # We copy a good default (like yolact_resnet50_config) and change what's necessary.
-yolact_custom_config = yolact_base_config.copy({
+yolact_custom_config = yolact_resnet50_config.copy({
     'name': 'yolact_custom',
 
     # Dataset
@@ -859,14 +859,14 @@ yolact_custom_config = yolact_base_config.copy({
 
     # Training settings
     'num_classes': 6 + 1,  # 6 classes + background
-    'max_iter': 10000,
+    'max_iter': 1000,
     'lr_schedule': lambda x: 1,  # fixed learning rate (no decay)
     'lr': 1e-4,
     'momentum': 0.9,
     'decay': 5e-4,
 
     # Data loader
-    'batch_size': 4,
+    'batch_size': 8,
     'num_workers': 2,
 
     # Image size and augmentations
