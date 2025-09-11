@@ -29,6 +29,7 @@ from PIL import Image
 import matplotlib.pyplot as plt
 import cv2
 
+
 def str2bool(v):
     if v.lower() in ('yes', 'true', 't', 'y', '1'):
         return True
@@ -138,9 +139,13 @@ def prep_display(dets_out, img, h, w, undo_transform=True, class_color=False, ma
     """
     if undo_transform:
         img_numpy = undo_image_transformation(img, w, h)
-        img_gpu = torch.Tensor(img_numpy).cuda()
+        img_tensor = torch.Tensor(img_numpy)
+        if args.cuda:
+            img_tensor = img_tensor.cuda()
     else:
-        img_gpu = img / 255.0
+        # The input tensor is named img_gpu, but might be on CPU
+        # We will use 'display_tensor' as a unified variable name
+        img_tensor = img / 255.0
         h, w, _ = img.shape
     
     with timer.env('Postprocess'):
@@ -191,7 +196,8 @@ def prep_display(dets_out, img, h, w, undo_transform=True, class_color=False, ma
         masks = masks[:num_dets_to_consider, :, :, None]
         
         # Prepare the RGB images for each mask given their color (size [num_dets, h, w, 1])
-        colors = torch.cat([get_color(j, on_gpu=img_gpu.device.index).view(1, 1, 1, 3) for j in range(num_dets_to_consider)], dim=0)
+        # MODIFIED: Use img_tensor.device instead of img_gpu.device.index for CPU/GPU compatibility
+        colors = torch.cat([get_color(j, on_gpu=img_tensor.device).view(1, 1, 1, 3) for j in range(num_dets_to_consider)], dim=0)
         masks_color = masks.repeat(1, 1, 1, 3) * colors * mask_alpha
 
         # This is 1 everywhere except for 1-mask_alpha where the mask is
@@ -199,29 +205,29 @@ def prep_display(dets_out, img, h, w, undo_transform=True, class_color=False, ma
         
         # I did the math for this on pen and paper. This whole block should be equivalent to:
         #    for j in range(num_dets_to_consider):
-        #        img_gpu = img_gpu * inv_alph_masks[j] + masks_color[j]
+        #        img_tensor = img_tensor * inv_alph_masks[j] + masks_color[j]
         masks_color_summand = masks_color[0]
         if num_dets_to_consider > 1:
             inv_alph_cumul = inv_alph_masks[:(num_dets_to_consider-1)].cumprod(dim=0)
             masks_color_cumul = masks_color[1:] * inv_alph_cumul
             masks_color_summand += masks_color_cumul.sum(dim=0)
 
-        img_gpu = img_gpu * inv_alph_masks.prod(dim=0) + masks_color_summand
+        img_tensor = img_tensor * inv_alph_masks.prod(dim=0) + masks_color_summand
     
     if args.display_fps:
-            # Draw the box for the fps on the GPU
+        # Draw the box for the fps on the GPU
         font_face = cv2.FONT_HERSHEY_DUPLEX
         font_scale = 0.6
         font_thickness = 1
 
         text_w, text_h = cv2.getTextSize(fps_str, font_face, font_scale, font_thickness)[0]
 
-        img_gpu[0:text_h+8, 0:text_w+8] *= 0.6 # 1 - Box alpha
-
+        img_tensor[0:text_h+8, 0:text_w+8] *= 0.6 # 1 - Box alpha
 
     # Then draw the stuff that needs to be done on the cpu
     # Note, make sure this is a uint8 tensor or opencv will not anti alias text for whatever reason
-    img_numpy = (img_gpu * 255).byte().cpu().numpy()
+    img_numpy = (img_tensor * 255).byte().cpu().numpy()
+
 
     if args.display_fps:
         # Draw the text on the CPU
@@ -413,9 +419,10 @@ def prep_metrics(ap_data, dets, img, gt, gt_masks, h, w, num_crowd, image_id, de
             scores = list(scores.cpu().numpy().astype(float))
             box_scores = scores
             mask_scores = scores
-        masks = masks.view(-1, h*w).cuda()
-        boxes = boxes.cuda()
-
+        masks = masks.view(-1, h*w)
+        if args.cuda:
+            masks = masks.cuda()
+            boxes = boxes.cuda()
 
     if args.output_coco_json:
         with timer.env('JSON Output'):
@@ -592,16 +599,37 @@ def badhash(x):
     x =  ((x >> 16) ^ x) & 0xFFFFFFFF
     return x
 
-def evalimage(net:Yolact, path:str, save_path:str=None):
-    frame = torch.from_numpy(cv2.imread(path)).cuda().float()
-    batch = FastBaseTransform()(frame.unsqueeze(0))
+def evalimage(net:Yolact, path:str, save_path:str=None, use_cuda:bool=False):
+    # 1. Read the original image with OpenCV and keep it for the final display
+    original_frame = cv2.imread(path)
+    if original_frame is None:
+        print(f"Error: Image at path {path} could not be read.")
+        return
+
+    # 2. Prepare the image for the model
+    transform = BaseTransform()
+    # The transform returns a transformed NumPy array; we only need the image
+    transformed_frame, _, _, _ = transform(original_frame)
+    # Convert to a tensor, fix dimensions for PyTorch (C, H, W), and add a batch dimension
+    batch = torch.from_numpy(transformed_frame).permute(2, 0, 1).unsqueeze(0).float()
+
+    # 3. Conditionally move the model and batch to the GPU
+    if use_cuda:
+        net = net.cuda()
+        batch = batch.cuda()
+
+    # 4. Run inference
     preds = net(batch)
 
-    img_numpy = prep_display(preds, frame, None, None, undo_transform=False)
+    # 5. Prepare the image for display.
+    # We pass the network's predictions and the original, unmodified frame.
+    img_numpy = prep_display(preds, original_frame, None, None, undo_transform=False)
     
+    # 6. Convert BGR (OpenCV) to RGB (Matplotlib) for displaying
     if save_path is None:
         img_numpy = img_numpy[:, :, (2, 1, 0)]
 
+    # 7. Save or display the final image
     if save_path is None:
         plt.imshow(img_numpy)
         plt.title(path)
@@ -1103,5 +1131,6 @@ if __name__ == '__main__':
             net = net.cuda()
 
         evaluate(net, dataset)
+
 
 

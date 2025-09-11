@@ -173,28 +173,6 @@ pascal_sbd_dataset = dataset_base.copy({
 })
 
 
-# Step 1: Define your custom dataset configuration
-# We give it a unique name, like `my_dataset`.
-my_dataset = dataset_base.copy({
-    'name': 'My Custom Dataset',
-
-    # Point to your specific folder structure.
-    # Assumes your data is in `yolact/data/my_dataset/`
-    # and inside that folder are 'train', 'valid' directories.
-    'train_images': './data/my_dataset/train',
-    'train_info':   './data/my_dataset/train/_annotations.coco.json',
-
-    'valid_images': './data/my_dataset/valid',
-    'valid_info':   './data/my_dataset/valid/_annotations.coco.json',
-
-    # Define your class names list directly inside the config.
-    'class_names': ('bench', 'chair', 'couch', 'dining table', 'laptop', 'person'),
-
-    # If your category IDs in the JSON are already 1, 2, 3, ..., 6, you don't need a label_map.
-    # If they are something else (e.g., 15, 21, 30), you MUST define a map here.
-    # Example: 'label_map': {15: 1, 21: 2, 30: 3, ...}
-    'label_map': None
-})
 
 
 
@@ -827,27 +805,6 @@ yolact_plus_resnet50_config = yolact_plus_base_config.copy({
     }),
 })
 
-# ----------------------- YOUR NEW TRAINING CONFIG GOES HERE ----------------------- #
-
-# Step 2: Create a training config that USES your new dataset.
-# We copy a good default (like yolact_resnet50_config) and change what's necessary.
-yolact_custom_config = yolact_resnet50_config.copy({
-    'name': 'yolact_custom',
-
-    # Crucial Part 1: Point to your new dataset configuration.
-    'dataset': my_dataset,
-
-    # Crucial Part 2: Set the number of classes.
-    # It's your number of classes + 1 for the background.
-    'num_classes': len(my_dataset.class_names) + 1,
-
-    # You can also adjust training parameters here if needed.
-    # For a small dataset, you might want to decrease max_iter and lr_steps.
-    # 'max_iter': 200000,
-    # 'lr_steps': (120000, 160000, 180000),
-    'max_iter': 200,
-    'lr_steps': (120, 160, 180),
-})
 
 # Default config
 cfg = yolact_base_config.copy()

@@ -3,10 +3,11 @@ from torchvision import transforms
 import cv2
 import numpy as np
 import types
-import random
+from numpy import random
 from math import sqrt
 
 from data import cfg, MEANS, STD
+import random as python_random
 
 
 def intersect(box_a, box_b):
@@ -188,7 +189,7 @@ class RandomSaturation(object):
         assert self.lower >= 0, "contrast lower must be non-negative."
 
     def __call__(self, image, masks=None, boxes=None, labels=None):
-        if random.randint(0, 1):
+        if random.randint(2):
             image[:, :, 1] *= random.uniform(self.lower, self.upper)
 
         return image, masks, boxes, labels
@@ -200,7 +201,7 @@ class RandomHue(object):
         self.delta = delta
 
     def __call__(self, image, masks=None, boxes=None, labels=None):
-        if random.randint(0, 1):
+        if random.randint(2):
             image[:, :, 0] += random.uniform(-self.delta, self.delta)
             image[:, :, 0][image[:, :, 0] > 360.0] -= 360.0
             image[:, :, 0][image[:, :, 0] < 0.0] += 360.0
@@ -216,7 +217,7 @@ class RandomLightingNoise(object):
     def __call__(self, image, masks=None, boxes=None, labels=None):
         # Don't shuffle the channels please, why would you do this
 
-        # if random.randint(0, 1):
+        # if random.randint(2):
         #     swap = self.perms[random.randint(len(self.perms))]
         #     shuffle = SwapChannels(swap)  # shuffle channels
         #     image = shuffle(image)
@@ -247,7 +248,7 @@ class RandomContrast(object):
 
     # expects float image
     def __call__(self, image, masks=None, boxes=None, labels=None):
-        if random.randint(0, 1):
+        if random.randint(2):
             alpha = random.uniform(self.lower, self.upper)
             image *= alpha
         return image, masks, boxes, labels
@@ -260,7 +261,7 @@ class RandomBrightness(object):
         self.delta = delta
 
     def __call__(self, image, masks=None, boxes=None, labels=None):
-        if random.randint(0, 1):
+        if random.randint(2):
             delta = random.uniform(-self.delta, self.delta)
             image += delta
         return image, masks, boxes, labels
@@ -293,7 +294,7 @@ class RandomSampleCrop(object):
         self.sample_options = (
             # using entire original input image
             None,
-            # sample a patch s.t. MIN jaccard w/ obj in .1,.3,.4,.7,.9
+            # sample a patch s.t. MIN jaccard w/ obj in .1, .3, .4, .7, .9
             (0.1, None),
             (0.3, None),
             (0.7, None),
@@ -302,13 +303,13 @@ class RandomSampleCrop(object):
             (None, None),
         )
 
-    def __call__(self, image, masks, boxes=None, labels=None):
-        height, width, _ = image.shape
+    def __call__(self, img, masks, boxes, labels):
+        height, width, _ = img.shape
         while True:
             # randomly choose a mode
-            mode = random.choice(self.sample_options)
+            mode = python_random.choice(self.sample_options)
             if mode is None:
-                return image, masks, boxes, labels
+                return img, masks, boxes, labels
 
             min_iou, max_iou = mode
             if min_iou is None:
@@ -318,7 +319,9 @@ class RandomSampleCrop(object):
 
             # max trails (50)
             for _ in range(50):
-                current_image = image
+                # THIS IS THE LINE TO FIX
+                current_image = img
+                # END OF FIX
 
                 w = random.uniform(0.3 * width, width)
                 h = random.uniform(0.3 * height, height)
@@ -327,8 +330,8 @@ class RandomSampleCrop(object):
                 if h / w < 0.5 or h / w > 2:
                     continue
 
-                left = random.uniform(0, width - w)
-                top = random.uniform(0, height - h)
+                left = random.uniform(width - w)
+                top = random.uniform(height - h)
 
                 # convert to integer rect x1,y1,x2,y2
                 rect = np.array([int(left), int(top), int(left+w), int(top+h)])
@@ -410,7 +413,7 @@ class Expand(object):
         self.mean = mean
 
     def __call__(self, image, masks, boxes, labels):
-        if random.randint(0, 1):
+        if random.randint(2):
             return image, masks, boxes, labels
 
         height, width, depth = image.shape
@@ -443,7 +446,7 @@ class Expand(object):
 class RandomMirror(object):
     def __call__(self, image, masks, boxes, labels):
         _, width, _ = image.shape
-        if random.randint(0, 1):
+        if random.randint(2):
             image = image[:, ::-1]
             masks = masks[:, :, ::-1]
             boxes = boxes.copy()
@@ -454,7 +457,7 @@ class RandomMirror(object):
 class RandomFlip(object):
     def __call__(self, image, masks, boxes, labels):
         height , _ , _ = image.shape
-        if random.randint(0, 1):
+        if random.randint(2):
             image = image[::-1, :]
             masks = masks[:, ::-1, :]
             boxes = boxes.copy()
@@ -465,7 +468,7 @@ class RandomFlip(object):
 class RandomRot90(object):
     def __call__(self, image, masks, boxes, labels):
         old_height , old_width , _ = image.shape
-        k = random.randint(0, 3)
+        k = random.randint(4)
         image = np.rot90(image,k)
         masks = np.array([np.rot90(mask,k) for mask in masks])
         boxes = boxes.copy()
@@ -517,7 +520,7 @@ class PhotometricDistort(object):
     def __call__(self, image, masks, boxes, labels):
         im = image.copy()
         im, masks, boxes, labels = self.rand_brightness(im, masks, boxes, labels)
-        if random.randint(0, 1):
+        if random.randint(2):
             distort = Compose(self.pd[:-1])
         else:
             distort = Compose(self.pd[1:])
@@ -562,6 +565,22 @@ class PrepareMasks(object):
         new_masks[new_masks <= 0.5] = 0
 
         return image, new_masks, boxes, labels
+
+class Normalize(object):
+    """
+    Normalizes an image by subtracting mean and dividing by std.
+    Note: I'm not using the torchvision.transforms.Normalize because that
+          works on torch tensors and this works on numpy images.
+    """
+
+    def __init__(self, mean, std):
+        self.mean = np.array(mean, dtype=np.float32)
+        self.std = np.array(std, dtype=np.float32)
+
+    def __call__(self, image, masks=None, boxes=None, labels=None):
+        image = image.astype(np.float32)
+        image = (image - self.mean) / self.std
+        return image, masks, boxes, labels
 
 class BackboneTransform(object):
     """
@@ -667,22 +686,34 @@ def enable_if(condition, obj):
 class SSDAugmentation(object):
     """ Transform to be used when training. """
 
-    def __init__(self, mean=MEANS, std=STD):
+    def __init__(self, means=MEANS, stds=STD, to_rgb=True):
+        self.means = means
+        self.stds = stds
+        self.to_rgb = to_rgb
         self.augment = Compose([
             ConvertFromInts(),
             ToAbsoluteCoords(),
-            enable_if(cfg.augment_photometric_distort, PhotometricDistort()),
-            enable_if(cfg.augment_expand, Expand(mean)),
-            enable_if(cfg.augment_random_sample_crop, RandomSampleCrop()),
-            enable_if(cfg.augment_random_mirror, RandomMirror()),
-            enable_if(cfg.augment_random_flip, RandomFlip()),
-            enable_if(cfg.augment_random_flip, RandomRot90()),
-            Resize(),
-            enable_if(not cfg.preserve_aspect_ratio, Pad(cfg.max_size, cfg.max_size, mean)),
+            PhotometricDistort(),
+            Expand(self.means),
+            RandomSampleCrop(),
+            RandomMirror(),
             ToPercentCoords(),
+            Resize(cfg.max_size),
             PrepareMasks(cfg.mask_size, cfg.use_gt_bboxes),
-            BackboneTransform(cfg.backbone.transform, mean, std, 'BGR')
+            Normalize(self.means, self.stds),
+            # REMOVE THE LINE BELOW
+            # ToTensor(),
         ])
+
 
     def __call__(self, img, masks, boxes, labels):
         return self.augment(img, masks, boxes, labels)
+    # def __call__(self, img, masks, boxes, labels):
+    #     height, width, _ = img.shape
+    #     while True:
+    #         # randomly choose a mode
+    #         mode = python_random.choice(self.sample_options)
+    #         if mode is None:
+    #             return img, masks, boxes, labels
+
+    #         min_iou, max_iou = mode
